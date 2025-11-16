@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'sign_in_screen.dart';
 import 'detail_screen.dart';
+import 'search_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -32,6 +33,7 @@ class _HomeScreenState extends State<HomeScreen> {
       (route) => false,
     );
   }
+  
 
   @override
   void initState() {
@@ -71,6 +73,19 @@ class _HomeScreenState extends State<HomeScreen> {
                       imageUrl: 'https://i.pinimg.com/originals/ff/d3/73/ffd37353a07af66dc052dd9cfe3d4034.jpg',
                       description: 'Ini adalah deskripsi contoh untuk melihat tampilan DetailScreen.',
                     ),
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 16),
+            ElevatedButton.icon(
+              icon: const Icon(Icons.location_on),
+              label: const Text('Cari Tempat Wisata'),
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const SearchScreen(),
                   ),
                 );
               },
