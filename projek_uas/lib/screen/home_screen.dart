@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:projek_uas/screen/profile_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'sign_in_screen.dart';
 import 'detail_screen.dart';
@@ -90,6 +91,22 @@ class _HomeScreenState extends State<HomeScreen> {
                 );
               },
             ),
+            const SizedBox(height: 16),
+            ElevatedButton.icon(
+              icon: const Icon(Icons.person),
+              label: const Text('Profil'),
+              onPressed: (){
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const ProfileScreen(),
+                    ),
+                  );
+              },
+
+              ),
+
+
           ],
         ),
       ),
