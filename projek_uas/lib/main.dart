@@ -5,6 +5,7 @@ import 'package:projek_uas/screen/sign_in_screen.dart';
 import 'package:projek_uas/screen/splash_screen.dart';
 import 'package:projek_uas/screen/home_screen.dart';
 import 'package:projek_uas/screen/theme_provider.dart';
+import 'package:projek_uas/screen/profile_screen.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
 import 'package:provider/provider.dart';
@@ -49,6 +50,7 @@ class MyApp extends StatelessWidget {
         '/login': (context) => const SignInScreen(),
         '/home': (context) => const HomeScreen(),
         '/add': (context) => const AddPostScreen(),
+        '/profile' : (context) => const ProfileScreen()
       },
 
       home: const SplashScreen(),

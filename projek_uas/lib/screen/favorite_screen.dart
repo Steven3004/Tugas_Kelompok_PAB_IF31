@@ -113,7 +113,7 @@ class _FavoriteScreenState extends State<FavoriteScreen> {
                                         subtitle: subtitle,
                                         imageUrl: (data['imageUrl'] ?? '').toString(),
                                         description: (data['description'] ?? '').toString(),
-                                        initiallyFavorite: true,
+                                        initiallyFavorite: true, postId: '', userId: '', createdAt: null,
                                       ),  
                                     ),
                                   );

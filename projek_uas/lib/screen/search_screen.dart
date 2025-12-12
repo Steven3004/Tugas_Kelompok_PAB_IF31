@@ -87,7 +87,7 @@ class _SearchScreenState extends State<SearchScreen> {
           title: item.title,
           subtitle: item.subtitle,
           imageUrl: item.imageUrl,
-          description: item.description,
+          description: item.description, postId: '', initiallyFavorite: null, userId: '', createdAt: null, fullName: '',
         ),
       ),
     );
