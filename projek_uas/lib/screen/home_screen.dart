@@ -308,7 +308,8 @@ class _HomeScreenState extends State<HomeScreen>
                     );
                   }
 
-                  final photoBase64 = snapshot.data?['photoBase64'] as String?;
+                  final userDataMap = snapshot.data?.data() as Map<String, dynamic>?;
+                  final photoBase64 = userDataMap?['photoBase64'] as String?;
 
                   return GestureDetector(
                     onTap: () => _onItemTapped(3),
@@ -482,10 +483,19 @@ class _HomeScreenState extends State<HomeScreen>
             final imageBase64 = data['image'] as String?;
             final title = data['title'] as String?;
             final description = data['description'] as String?;
-            final createdAtStr = data['createdAt'] as String;
+            final createdAtValue = data['createdAt'];
             final fullName = data['fullName'] as String? ?? 'Anonymous';
             final userId = data['userId'] as String? ?? 'Unknown';
-            final createdAt = DateTime.parse(createdAtStr);
+            DateTime createdAt;
+            if (createdAtValue is Timestamp) {
+              createdAt = createdAtValue.toDate();
+            } else if (createdAtValue is String) {
+              createdAt = DateTime.tryParse(createdAtValue) ?? DateTime.now();
+            } else if (createdAtValue is int) {
+              createdAt = DateTime.fromMillisecondsSinceEpoch(createdAtValue);
+            } else {
+              createdAt = DateTime.now();
+            }
 
             return FutureBuilder<DocumentSnapshot>(
               future: FirebaseFirestore.instance
