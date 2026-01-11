@@ -738,12 +738,7 @@ Dibagikan dari WisataAnywhere App
 
   @override
   Widget build(BuildContext context) {
-  return Scaffold(
-    appBar: AppBar(
-      title: Text(widget.title ?? "Detail Post"),
-      backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-    ),
-    body: isLoading
+    final Widget bodyWidget = isLoading
         ? const Center(child: CircularProgressIndicator())
         : SingleChildScrollView(
             child: Column(
@@ -992,7 +987,13 @@ Dibagikan dari WisataAnywhere App
                   ],
                 ],
               ),
-            ),
+                );
+              return Scaffold(
+      appBar: AppBar(
+        title: Text(widget.title ?? "Detail Post"),
+        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+      ),
+      body: bodyWidget,
     );
   }
 }
