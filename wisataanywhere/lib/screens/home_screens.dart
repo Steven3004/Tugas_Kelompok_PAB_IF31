@@ -1,19 +1,20 @@
 import 'package:flutter/material.dart';
 import 'dart:convert';
+import 'dart:typed_data';
 import 'package:intl/intl.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:wisataanywhere/screens/add_post_screen.dart';
-import 'package:wisataanywhere/screens/detail_screen.dart';
-import 'package:wisataanywhere/screens/sign_in_screen.dart';
-import 'package:wisataanywhere/screens/theme_provider.dart';
-import 'package:wisataanywhere/screens/favorite_screen.dart';
-import 'package:wisataanywhere/screens/search_screen.dart';
-import 'package:wisataanywhere/screens/profile_screen.dart';
 import 'package:shimmer/shimmer.dart';
 import 'package:liquid_pull_to_refresh/liquid_pull_to_refresh.dart';
 import 'package:lottie/lottie.dart';
+import 'package:wisataanywhere/screens/add_post_screen.dart';
+import 'package:wisataanywhere/screens/detail_screen.dart';
+import 'package:wisataanywhere/screens/favorite_screen.dart';
+import 'package:wisataanywhere/screens/profile_screen.dart';
+import 'package:wisataanywhere/screens/search_screen.dart';
+import 'package:wisataanywhere/screens/sign_in_screen.dart';
+import 'package:wisataanywhere/screens/theme_provider.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -26,7 +27,7 @@ class PostStatsWidget extends StatelessWidget {
   final String postId;
   final bool isDarkMode;
   
-  const PostStatsWidget({
+  const PostStatsWidget({super.key, 
     required this.postId,
     required this.isDarkMode,
   });
@@ -263,6 +264,22 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     });
   }
 
+  Uint8List? _decodeBase64Safe(String? base64String) {
+    if (base64String == null || base64String.isEmpty) {
+      print('❌ Base64 string is null or empty');
+      return null;
+    }
+
+    try {
+      final bytes = base64Decode(base64String);
+      print('✅ Successfully decoded base64: ${bytes.length} bytes');
+      return bytes;
+    } catch (e) {
+      print('❌ Error decoding base64: $e');
+      return null;
+    }
+  }
+
   @override
   void dispose() {
     _pageController.dispose();
@@ -438,47 +455,88 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   }
 
   Widget _buildHomeContent(bool isDarkMode, Color themeColor) {
+    print('\n\n🏠 [HOME_SCREEN] _buildHomeContent() called');
+    
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance
           .collection('posts')
           .orderBy('createdAt', descending: true)
           .snapshots(),
       builder: (context, snapshot) {
+        print('📡 [HOME_SCREEN] StreamBuilder callback - connectionState: ${snapshot.connectionState}');
+        
         if (snapshot.connectionState == ConnectionState.waiting) {
+          print('⏳ [HOME_SCREEN] Loading posts...');
           return _buildShimmerLoading();
         }
         
         if (snapshot.hasError) {
+          print('❌ [HOME_SCREEN] Error: ${snapshot.error}');
           return _buildErrorState(isDarkMode, 'Error loading posts');
         }
         
         if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+          print('⚠️ [HOME_SCREEN] No posts found');
           return _buildEmptyState(isDarkMode, themeColor);
         }
 
         final posts = snapshot.data!.docs;
+        print('✅ [HOME_SCREEN] Found ${posts.length} posts\n');
 
         return ListView.builder(
           padding: const EdgeInsets.only(top: 8, bottom: 80),
           itemCount: posts.length,
           itemBuilder: (context, index) {
-            final postDoc = posts[index];
-            final postId = postDoc.id;
-            final data = postDoc.data() as Map<String, dynamic>;
-            final imageBase64 = data['image'] as String?;
-            final title = data['title'] as String?;
-            final description = data['description'] as String?;
-            final fullName = data['fullName'] as String? ?? 'Anonymous';
-            final userId = data['userId'] as String? ?? 'Unknown';
+            try {
+              final postDoc = posts[index];
+              final postId = postDoc.id;
+              final data = postDoc.data() as Map<String, dynamic>;
+              
+              // Try to get image from both possible keys
+              var imageBase64 = data['imageBase64'] as String?;
+              if (imageBase64 == null || imageBase64.isEmpty) {
+                imageBase64 = data['image'] as String?; // Fallback to 'image' key
+              }
+              
+              final title = data['title'] as String?;
+              final description = data['description'] as String?;
+              final fullName = data['fullName'] as String? ?? 'Anonymous';
+              final userId = data['userId'] as String? ?? 'Unknown';
 
-            // Handle createdAt parsing
+            // Debug logging
+            print('\n╔════════════════════════════════════════════════╗');
+            print('║ 📋 POST DETAIL - ID: $postId');
+            print('║ Available keys: ${data.keys.toList()}');
+            print('║ Title: "$title"');
+            print('║ Description: "$description"');
+            
+            if (imageBase64 != null && imageBase64.isNotEmpty) {
+              print('║ ✅ imageBase64 FOUND: ${imageBase64.length} chars');
+              print('║ 🔤 Starts with: "${imageBase64.substring(0, 20)}"');
+              print('║ 🔤 Ends with: "${imageBase64.substring(imageBase64.length - 20)}"');
+              print('║ 📊 Length % 4 = ${imageBase64.length % 4} (should be 0)');
+              print('║ 🏷️ JPEG magic (/9j/): ${imageBase64.startsWith('/9j/') ? '✅ YES' : '❌ NO'}');
+            } else {
+              print('║ ❌ imageBase64 is NULL or EMPTY');
+              print('║ 🔍 Checking alternative keys...');
+              if (data.containsKey('image')) {
+                final altImage = data['image'] as String?;
+                print('║ ⚠️ Found "image" key: ${altImage != null ? "${altImage.length} chars" : "NULL"}');
+              }
+              if (data.containsKey('photo')) {
+                print('║ ⚠️ Found "photo" key: ${data['photo']}');
+              }
+            }
+            print('╚════════════════════════════════════════════════╝\n');
+
+            // Handle createdAt parsing - Firebase returns Timestamp not String
             DateTime createdAt;
             if (data['createdAt'] is Timestamp) {
               createdAt = (data['createdAt'] as Timestamp).toDate();
             } else {
               try {
-                final createdAtStr = data['createdAt'] as String? ?? '';
-                createdAt = DateTime.parse(createdAtStr);
+                final createdAtStr = data['createdAt'] as String?;
+                createdAt = createdAtStr != null ? DateTime.parse(createdAtStr) : DateTime.now();
               } catch (_) {
                 createdAt = DateTime.now();
               }
@@ -500,6 +558,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
 
                 final userData = userSnapshot.data?.data() as Map<String, dynamic>?;
                 final photoBase64 = userData?['photoBase64'] as String?;
+                final userFullName = userData?['fullName'] as String? ?? fullName ?? 'Anonymous';
                 final userPhoto = photoBase64 != null
                     ? MemoryImage(base64Decode(photoBase64))
                     : const AssetImage('assets/default_profile.png') as ImageProvider;
@@ -511,7 +570,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                   title: title,
                   description: description,
                   createdAt: createdAt,
-                  fullName: fullName,
+                  fullName: userFullName,
                   userPhoto: userPhoto,
                   onTap: () => _navigateToDetailScreen(
                     postId, imageBase64, title, description, createdAt, fullName, userId),
@@ -520,6 +579,10 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                 );
               },
             );
+            } catch (e) {
+              print('ERROR in ListView.builder: $e');
+              return _buildErrorCard(isDarkMode, 'Error loading post: $e');
+            }
           },
         );
       },
@@ -721,7 +784,7 @@ class AnimatedPostCard extends StatelessWidget {
   final String userId;
   final String postId;
 
-  const AnimatedPostCard({
+  const AnimatedPostCard({super.key, 
     required this.animation,
     required this.isDarkMode,
     this.imageBase64,
@@ -737,6 +800,8 @@ class AnimatedPostCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    print('🎨 AnimatedPostCard.build() - postId: $postId, imageBase64: ${imageBase64 != null ? '${imageBase64!.length} chars' : 'null'}');
+    
     return FadeTransition(
       opacity: animation,
       child: ScaleTransition(
@@ -761,18 +826,13 @@ class AnimatedPostCard extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      if (imageBase64 != null)
+                      if (imageBase64 != null && imageBase64!.isNotEmpty)
                         ClipRRect(
                           borderRadius:
                               const BorderRadius.vertical(top: Radius.circular(16)),
                           child: Stack(
                             children: [
-                              Image.memory(
-                                base64Decode(imageBase64!),
-                                fit: BoxFit.cover,
-                                width: double.infinity,
-                                height: 200,
-                              ),
+                              _buildImageWidget(imageBase64),
                               Positioned(
                                 bottom: 8,
                                 right: 8,
@@ -793,6 +853,25 @@ class AnimatedPostCard extends StatelessWidget {
                                 ),
                               ),
                             ],
+                          ),
+                        )
+                      else
+                        Container(
+                          height: 200,
+                          width: double.infinity,
+                          decoration: BoxDecoration(
+                            color: Colors.grey[300],
+                            borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+                          ),
+                          child: const Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.image_not_supported, size: 40),
+                                SizedBox(height: 8),
+                                Text('Tidak ada gambar'),
+                              ],
+                            ),
                           ),
                         ),
                       Padding(
@@ -890,5 +969,117 @@ class AnimatedPostCard extends StatelessWidget {
     } else {
       return DateFormat('dd/MM/yyyy').format(dateTime);
     }
+  }
+
+  Widget _buildImageWidget(String? base64Image) {
+    if (base64Image == null || base64Image.isEmpty) {
+      return Container(
+        height: 200,
+        color: Colors.grey[300],
+        child: const Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text('DEBUG: base64Image is NULL'),
+              SizedBox(height: 8),
+              Icon(Icons.image_not_supported),
+            ],
+          ),
+        ),
+      );
+    }
+
+    try {
+      final bytes = base64Decode(base64Image);
+      
+      return Image.memory(
+        bytes,
+        fit: BoxFit.cover,
+        width: double.infinity,
+        height: 200,
+        errorBuilder: (context, error, stackTrace) {
+          return Container(
+            height: 200,
+            color: Colors.red[100],
+            child: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Text('DEBUG: Image.memory error'),
+                  Text('Error: $error', style: const TextStyle(fontSize: 10)),
+                ],
+              ),
+            ),
+          );
+        },
+      );
+    } catch (e) {
+      return Container(
+        height: 200,
+        color: Colors.orange[100],
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Text('DEBUG: Decode error'),
+              Text('$e', style: const TextStyle(fontSize: 10)),
+            ],
+          ),
+        ),
+      );
+    }
+  }
+
+  bool _isValidBase64(String str) {
+    try {
+      // Base64 should only contain alphanumeric, +, /, and =
+      final base64Regex = RegExp(r'^[A-Za-z0-9+/]*={0,2}$');
+      if (!base64Regex.hasMatch(str)) {
+        print('❌ Base64 contains invalid characters');
+        return false;
+      }
+      
+      // Length should be multiple of 4
+      if (str.length % 4 != 0) {
+        print('❌ Base64 length not multiple of 4: ${str.length}');
+        return false;
+      }
+
+      // Extra validation: check if it ends properly
+      final lastChar = str[str.length - 1];
+      final secondLastChar = str.length > 1 ? str[str.length - 2] : '';
+      
+      // Debug info about string ending
+      print('✅ Base64 format valid: length=${str.length}, last char=$lastChar, second-last=$secondLastChar');
+      print('📊 Base64 first 50 chars: ${str.substring(0, (str.length > 50 ? 50 : str.length))}');
+      print('📊 Base64 last 50 chars: ${str.substring((str.length > 50 ? str.length - 50 : 0))}');
+      
+      return true;
+    } catch (e) {
+      print('❌ Base64 validation error: $e');
+      return false;
+    }
+  }
+
+  Widget _buildPlaceholder(String text, IconData icon) {
+    return Container(
+      height: 200,
+      width: double.infinity,
+      color: Colors.grey[300],
+      child: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, size: 40, color: Colors.grey[600]),
+            const SizedBox(height: 8),
+            Text(
+              text,
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.grey[600]),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }

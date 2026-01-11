@@ -10,6 +10,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:wisataanywhere/screens/check_location.dart';
 
+
 class DetailPostScreen extends StatefulWidget {
   final String? imageBase64;
   final String? title;
@@ -20,7 +21,7 @@ class DetailPostScreen extends StatefulWidget {
   final String userId; // Add userId field
 
   const DetailPostScreen({
-    Key? key,
+    super.key,
     required this.title,
     required this.imageBase64,
     required this.description,
@@ -28,7 +29,7 @@ class DetailPostScreen extends StatefulWidget {
     required this.fullName,
     required this.postId,
     required this.userId, // Add userId parameter
-  }) : super(key: key);
+  });
 
   factory DetailPostScreen.fromDocument(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>;
@@ -44,7 +45,7 @@ class DetailPostScreen extends StatefulWidget {
 
     return DetailPostScreen(
       postId: doc.id,
-      imageBase64: data['image'],
+      imageBase64: data['imageBase64'],
       title: data['title'],
       description: data['description'],
       createdAt: parsedCreatedAt,
@@ -61,6 +62,7 @@ class _DetailPostScreenState extends State<DetailPostScreen> {
   bool isLiked = false;
   bool isLoading = true;
   bool _showCommentBox = false;
+  bool _isSharing = false; // Add sharing state
   int likeCount = 0;
   int shareCount = 0;
   Map<String, dynamic>? postUserData; // To store the post author's data
@@ -405,76 +407,100 @@ class _DetailPostScreenState extends State<DetailPostScreen> {
 
   Future<void> _sharePost() async {
     try {
+      setState(() => _isSharing = true);
+
       final currentUser = FirebaseAuth.instance.currentUser;
       if (currentUser == null) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Please sign in to share posts')),
-          );
-        }
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Please sign in to share posts')),
+        );
+        setState(() => _isSharing = false);
         return;
       }
 
-      LocationPermission permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied ||
-          permission == LocationPermission.deniedForever) {
-        permission = await Geolocator.requestPermission();
-        if (permission == LocationPermission.denied ||
-            permission == LocationPermission.deniedForever) {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                  content: Text(
-                      'Location permission is required to share location')),
-            );
-          }
+      // 🔹 Ambil lokasi
+      double latitude = 0;
+      double longitude = 0;
+
+      final postDoc = await FirebaseFirestore.instance
+          .collection('posts')
+          .doc(widget.postId)
+          .get();
+
+      final postData = postDoc.data();
+      if (postData != null &&
+          postData['latitude'] != null &&
+          postData['longitude'] != null) {
+        latitude = postData['latitude'];
+        longitude = postData['longitude'];
+      } else {
+        LocationPermission permission = await Geolocator.checkPermission();
+        if (permission == LocationPermission.denied) {
+          permission = await Geolocator.requestPermission();
+        }
+
+        if (permission == LocationPermission.deniedForever) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Location permission required')),
+          );
+          setState(() => _isSharing = false);
           return;
         }
+
+        final position = await Geolocator.getCurrentPosition();
+        latitude = position.latitude;
+        longitude = position.longitude;
       }
 
-      final position = await Geolocator.getCurrentPosition();
+      final mapsUrl = 'https://maps.google.com/?q=$latitude,$longitude';
 
-      final googleMapsUrl =
-          'https://maps.google.com/?q=${position.latitude},${position.longitude}';
+      // 🔹 Caption
+      final caption = '''
+📍 Judul : ${widget.title ?? 'Tempat Wisata'}
 
-      String shareText = '''
-🗺️ WisataAnywhere
+${widget.description ?? ''}
 
-📌 ${widget.title ?? 'Check this post'}
+🗺️ Lokasi:
+$mapsUrl
 
-📝 ${widget.description ?? 'An amazing place to visit'}
-
-📍 Location: $googleMapsUrl
-
-Shared by: ${widget.fullName}
+Dibagikan dari WisataAnywhere App
 ''';
 
-      // Update share count
+      // 🔹 SIMPAN GAMBAR BASE64 KE FILE
+      final tempDir = await getTemporaryDirectory();
+      final filePath = '${tempDir.path}/post_${widget.postId}.jpg';
+
+      final imageBytes = base64Decode(widget.imageBase64!);
+      final imageFile = File(filePath);
+      await imageFile.writeAsBytes(imageBytes);
+
+      // 🔹 UPDATE SHARE COUNT
       await FirebaseFirestore.instance
           .collection('posts')
           .doc(widget.postId)
           .update({
         'shareCount': FieldValue.increment(1),
       });
+
       setState(() => shareCount++);
 
-      if (widget.imageBase64 != null) {
-        final tempDir = await getTemporaryDirectory();
-        final file = File('${tempDir.path}/shared_image.png');
+      // 🔹 SHARE IMAGE + TEXT
+      await Share.shareXFiles(
+        [XFile(imageFile.path)],
+        text: caption,
+        subject: widget.title ?? 'WisataAnywhere',
+      );
 
-        final decodedBytes = base64Decode(widget.imageBase64!);
-        await file.writeAsBytes(decodedBytes);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('✅ Post shared successfully')),
+      );
 
-        await Share.shareXFiles([XFile(file.path)], text: shareText);
-      } else {
-        await Share.share(shareText);
-      }
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to share: $e')),
-        );
-      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to share: $e')),
+      );
+    } finally {
+      setState(() => _isSharing = false);
     }
   }
 
@@ -710,112 +736,58 @@ Shared by: ${widget.fullName}
     );
   }
 
-  Widget _buildPostImage() {
-    print('🖼️ Image Base64 Status: imageBase64=${widget.imageBase64?.isNotEmpty ?? false} (length: ${widget.imageBase64?.length ?? 0})');
-    
-    if (widget.imageBase64 == null || widget.imageBase64!.isEmpty) {
-      return Container(
-        height: 300,
-        color: Colors.grey[200],
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.image_not_supported, size: 50, color: Colors.grey),
-            const SizedBox(height: 8),
-            Text('No image available', style: TextStyle(color: Colors.grey[600])),
-          ],
-        ),
-      );
-    }
-
-    try {
-      return Stack(
-        children: [
-          Image.memory(
-            base64Decode(widget.imageBase64!),
-            fit: BoxFit.cover,
-            width: double.infinity,
-            height: 300,
-            errorBuilder: (context, error, stackTrace) {
-              print('❌ Image decode error: $error');
-              return Container(
-                height: 300,
-                color: Colors.grey[200],
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(Icons.broken_image, size: 50, color: Colors.grey),
-                    const SizedBox(height: 8),
-                    Text('Error loading image', style: TextStyle(color: Colors.grey[600])),
-                  ],
-                ),
-              );
-            },
-          ),
-        Positioned(
-          top: 8,
-          right: 8,
-          child: GestureDetector(
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) =>
-                      CheckLocationScreen(postId: widget.postId),
-                ),
-              );
-            },
-            child: Container(
-              padding: const EdgeInsets.all(6),
-              decoration: const BoxDecoration(
-                color: Colors.black54,
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Icons.location_on,
-                color: Colors.white,
-                size: 28,
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-    } catch (e) {
-      print('❌ Exception in image display: $e');
-      return Container(
-        height: 300,
-        color: Colors.grey[200],
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.error_outline, size: 50, color: Colors.red),
-            const SizedBox(height: 8),
-            Text('Image error: $e', 
-              style: TextStyle(color: Colors.red[600], fontSize: 12),
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
-      );
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.title ?? "Detail Post"),
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-      ),
-      body: isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : SingleChildScrollView(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+  return Scaffold(
+    appBar: AppBar(
+      title: Text(widget.title ?? "Detail Post"),
+      backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+    ),
+    body: isLoading
+        ? const Center(child: CircularProgressIndicator())
+        : SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Post image
-                _buildPostImage(),
+                // Post image first
+                if (widget.imageBase64 != null)
+                  Stack(
+                    children: [
+                      Image.memory(
+                        base64Decode(widget.imageBase64!),
+                        fit: BoxFit.cover,
+                        width: double.infinity,
+                        height: 300,
+                      ),
+                      Positioned(
+                        top: 8,
+                        right: 8,
+                        child: GestureDetector(
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) =>
+                                    CheckLocationScreen(postId: widget.postId),
+                              ),
+                            );
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.all(6),
+                            decoration: const BoxDecoration(
+                              color: Colors.black54,
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(
+                              Icons.location_on,
+                              color: Colors.white,
+                              size: 28,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 
                 // User profile, title and description below the image
                 Padding(
@@ -830,7 +802,9 @@ Shared by: ${widget.fullName}
                             tag: 'user_avatar_${widget.userId}_${widget.postId}',
                             child: CircleAvatar(
                               radius: 20,
-                              backgroundImage: MemoryImage(base64Decode(postUserData!['photoBase64'])),
+                              backgroundImage: postUserData != null && postUserData!['photoBase64'] != null
+                                  ? MemoryImage(base64Decode(postUserData!['photoBase64']))
+                                  : const AssetImage('assets/default_profile.png') as ImageProvider,
                             ),
                           ),
                           const SizedBox(width: 12),
@@ -924,13 +898,23 @@ Shared by: ${widget.fullName}
                               ),
                             ),
                             GestureDetector(
-                              onTap: _sharePost,
-                              child: Column(
-                                children: [
-                                  const Icon(Icons.share_outlined, size: 28),
-                                  const SizedBox(height: 4),
-                                  Text('Share ($shareCount)'),
-                                ],
+                              onTap: _isSharing ? null : _sharePost,
+                              child: Opacity(
+                                opacity: _isSharing ? 0.5 : 1.0,
+                                child: Column(
+                                  children: [
+                                    if (_isSharing)
+                                      const SizedBox(
+                                        width: 28,
+                                        height: 28,
+                                        child: CircularProgressIndicator(strokeWidth: 2),
+                                      )
+                                    else
+                                      const Icon(Icons.share_outlined, size: 28),
+                                    const SizedBox(height: 4),
+                                    Text('Share ($shareCount)'),
+                                  ],
+                                ),
                               ),
                             ),
                           ],
