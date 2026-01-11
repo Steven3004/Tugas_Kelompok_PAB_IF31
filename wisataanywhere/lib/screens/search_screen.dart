@@ -303,23 +303,27 @@ class _SearchScreenState extends State<SearchScreen> {
                           final doc = _searchResults[index];
                           final data = doc.data() as Map<String, dynamic>;
                           final postId = doc.id;
-                          final imageBase64 = data['image'] as String?;
+                          // Support either 'image' or 'imageBase64' field coming from Firestore
+                          final rawImageValue = data['image'] ?? data['imageBase64'];
+                          final imageBase64 = rawImageValue is String ? rawImageValue : null;
                           final title = data['title'] as String?;
                           final description = data['description'] as String?;
-                          final createdAtStr = data['createdAt'] as String? ?? '';
                           final fullName = data['fullName'] as String? ?? 'Unknown';
                           final userId = data['userId'] as String? ?? '';
 
-                          // Handle createdAt parsing
+                          // Handle createdAt parsing (support Timestamp and String)
+                          final createdAtValue = data['createdAt'];
                           DateTime createdAt;
-                          if (data['createdAt'] is Timestamp) {
-                            createdAt = (data['createdAt'] as Timestamp).toDate();
-                          } else {
+                          if (createdAtValue is Timestamp) {
+                            createdAt = createdAtValue.toDate();
+                          } else if (createdAtValue is String) {
                             try {
-                              createdAt = DateTime.parse(createdAtStr);
+                              createdAt = DateTime.parse(createdAtValue);
                             } catch (_) {
                               createdAt = DateTime.now();
                             }
+                          } else {
+                            createdAt = DateTime.now();
                           }
 
                           return InkWell(
@@ -352,23 +356,38 @@ class _SearchScreenState extends State<SearchScreen> {
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     if (imageBase64 != null && imageBase64.isNotEmpty)
-                                      ClipRRect(
-                                        borderRadius: BorderRadius.circular(12),
-                                        child: Image.memory(
-                                          base64Decode(imageBase64),
-                                          width: 100,
-                                          height: 80,
-                                          fit: BoxFit.cover,
-                                          errorBuilder: (context, error, stackTrace) {
-                                            return Container(
+                                      Builder(builder: (context) {
+                                        try {
+                                          final bytes = base64Decode(imageBase64);
+                                          return ClipRRect(
+                                            borderRadius: BorderRadius.circular(12),
+                                            child: Image.memory(
+                                              bytes,
                                               width: 100,
                                               height: 80,
+                                              fit: BoxFit.cover,
+                                              errorBuilder: (context, error, stackTrace) {
+                                                return Container(
+                                                  width: 100,
+                                                  height: 80,
+                                                  color: Colors.grey[300],
+                                                  child: const Icon(Icons.broken_image),
+                                                );
+                                              },
+                                            ),
+                                          );
+                                        } catch (_) {
+                                          return Container(
+                                            width: 100,
+                                            height: 80,
+                                            decoration: BoxDecoration(
                                               color: Colors.grey[300],
-                                              child: const Icon(Icons.broken_image),
-                                            );
-                                          },
-                                        ),
-                                      )
+                                              borderRadius: BorderRadius.circular(12),
+                                            ),
+                                            child: const Icon(Icons.broken_image),
+                                          );
+                                        }
+                                      })
                                     else
                                       Container(
                                         width: 100,
