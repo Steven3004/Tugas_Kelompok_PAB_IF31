@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
@@ -17,6 +19,7 @@ class AddPostScreen extends StatefulWidget {
 class _AddPostScreenState extends State<AddPostScreen> {
   File? _image;
   String? _base64Image;
+  Uint8List? _webImage;
   final TextEditingController _titleController = TextEditingController();
   final TextEditingController _descriptionController = TextEditingController();
   final ImagePicker _picker = ImagePicker();
@@ -35,20 +38,18 @@ class _AddPostScreenState extends State<AddPostScreen> {
     try {
       final pickedFile = await _picker.pickImage(source: source);
       if (pickedFile != null) {
-        File originalFile = File(pickedFile.path);
-
-        final compressedBytes = await FlutterImageCompress.compressWithFile(
-          originalFile.absolute.path,
+        final bytes = await pickedFile.readAsBytes();
+        
+        // Kompresi gambar
+        final compressedBytes = await FlutterImageCompress.compressWithList(
+          bytes,
           quality: 40,
         );
 
-        if (compressedBytes == null) {
+        if (compressedBytes.isEmpty) {
           _showErrorSnackbar('Gagal mengompresi gambar.');
           return;
         }
-
-        final compressedFile = File('${originalFile.path}_compressed.jpg')
-          ..writeAsBytesSync(compressedBytes);
 
         final base64 = base64Encode(compressedBytes);
 
@@ -58,7 +59,11 @@ class _AddPostScreenState extends State<AddPostScreen> {
         }
 
         setState(() {
-          _image = compressedFile;
+          if (kIsWeb) {
+            _webImage = compressedBytes;
+          } else {
+            _image = File(pickedFile.path);
+          }
           _base64Image = base64;
         });
       }
@@ -223,15 +228,22 @@ class _AddPostScreenState extends State<AddPostScreen> {
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(color: Colors.grey[400]!),
                 ),
-                child: _image != null
+                child: _webImage != null || _image != null
                     ? ClipRRect(
                         borderRadius: BorderRadius.circular(12),
-                        child: Image.file(
-                          _image!,
-                          fit: BoxFit.cover,
-                          width: double.infinity,
-                          height: double.infinity,
-                        ),
+                        child: kIsWeb
+                            ? Image.memory(
+                                _webImage!,
+                                fit: BoxFit.cover,
+                                width: double.infinity,
+                                height: double.infinity,
+                              )
+                            : Image.file(
+                                _image!,
+                                fit: BoxFit.cover,
+                                width: double.infinity,
+                                height: double.infinity,
+                              ),
                       )
                     : Column(
                         mainAxisAlignment: MainAxisAlignment.center,
